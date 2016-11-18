@@ -33,6 +33,14 @@ import CubeMaker
 class TrainRenderer(ShowBase):
     renderIndx=0
 
+
+    # Given a square matrix, substract mean and divide std dev
+    def zNormalized(self, M ):
+        M_mean = np.mean(M) # scalar
+        M_std = np.std(M)
+        M_statSquash = (M - M_mean)/M_std
+        return M_statSquash
+
     # Basic Mesh & Camera Setup
     def loadAllTextures(self, mesh, basePath, silent=True):
         """ Loads texture files for a mesh """
@@ -118,15 +126,16 @@ class TrainRenderer(ShowBase):
 
         batchsize = self.solver.net.blobs['data'].data.shape[0]
         # print 'batchsize', batchsize
-        print "self.solver.net.blobs['data'].data", self.solver.net.blobs['data'].data.shape
-        print "self.solver.net.blobs['label_x'].data",self.solver.net.blobs['label_x'].data.shape
+        # print "self.solver.net.blobs['data'].data", self.solver.net.blobs['data'].data.shape
+        # print "self.solver.net.blobs['label_x'].data",self.solver.net.blobs['label_x'].data.shape
         for i in range(batchsize):
             im = self.q_imStack.get() #320x240x3
             im_gry = np.mean( im, axis=2)
+            im_statSquash = self.zNormalized( im.astype('float32') )
             y = self.q_labelStack.get()
             # cv2.imwrite( str(i)+'__.png', x )
 
-            self.solver.net.blobs['data'].data[i,0,:,:] = im_gry.astype('float32')
+            self.solver.net.blobs['data'].data[i,:,:,:] = im_statSquash.astype('float32').transpose(2,0,1)
             self.solver.net.blobs['label_x'].data[i,0] = y[0]
             self.solver.net.blobs['label_y'].data[i,0] = y[1]
             self.solver.net.blobs['label_z'].data[i,0] = y[2]
@@ -212,7 +221,11 @@ class TrainRenderer(ShowBase):
         poses = np.zeros( (len(self.cameraList), 4), dtype='float32' )
         for i in range(len(self.cameraList)):
             randX,randY, randZ, randYaw, randPitch, randRoll = self.monte_carlo_sample()
-            # randX = (i) * 10
+            # if i<4 :
+            #     randX = (i) * 30
+            # else:
+            #     randX = 0
+            #
             # randY = 0#task.frame
             # randZ = 80
             # randYaw = 0
@@ -249,6 +262,9 @@ class TrainRenderer(ShowBase):
         # myTexture = self.win2.getTexture()
         # print myTexture
 
+        # retrive poses from prev render
+        texPoses = self.prevPoses
+
         #
         # Cut rendered data into individual image. Note rendered data will be 4X4 grid of images
         #960 rows and 1280 cols (4x4 image-grid)
@@ -270,7 +286,7 @@ class TrainRenderer(ShowBase):
 
 
                     self.q_imStack.put( imX )
-                    self.q_labelStack.put( poses[c,:] )
+                    self.q_labelStack.put( texPoses[c,:] )
 
 
                     # fname = '__'+str(poses[c,0]) + '_' + str(poses[c,1]) + '_' + str(poses[c,2]) + '_' + str(poses[c,3]) + '_'
@@ -304,7 +320,7 @@ class TrainRenderer(ShowBase):
     def __init__(self, solver_proto, arch_proto):
         ShowBase.__init__(self)
         self.taskMgr.add( self.renderNlearnTask, "renderNlearnTask" ) #changing camera poses
-        self.taskMgr.add( self.putAxesTask, "putAxesTask" ) #changing camera poses
+        self.taskMgr.add( self.putAxesTask, "putAxesTask" ) #draw co-ordinate axis
 
 
         # Misc Setup

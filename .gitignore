@@ -4,7 +4,7 @@ CMakeLists.txt.user
 Doxyfile
 docs/
 model/
-model
+model*
 build/
 *.log
 *.bak
@@ -28,3 +28,4 @@ net_workshop/*.tmp
 net_workshop2/*.tmp
 trace__visualize/*
 transfer_learning/
+model*

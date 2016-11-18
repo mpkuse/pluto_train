@@ -17,9 +17,9 @@ snapshot_prefix: "caffe_snaps/x_ResNet50_b" #b is normal (3-channel), ; b6 is fo
 iter_size: 1 #see issue 1977 of BVLC/caffe
 
 
-base_lr: 1e-6
+base_lr: 9e-6
 momentum: 0.9
-weight_decay: 0.006
+weight_decay: 0.0003
 # The learning rate policy
 lr_policy: "multistep"
 stepvalue: 800
