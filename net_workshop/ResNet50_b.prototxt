@@ -4,7 +4,7 @@ layer {
   name: 'data'
   type: 'Input'
   top: 'data'
-  input_param { shape: { dim: 16 dim: 3 dim: 240 dim: 320 } }
+  input_param { shape: { dim: 20 dim: 3 dim: 240 dim: 320 } }
   include {
     phase: TRAIN
   }
@@ -14,7 +14,7 @@ layer {
   name: 'label_x'
   type: 'Input'
   top: 'label_x'
-  input_param { shape: { dim: 16 dim: 1 } }
+  input_param { shape: { dim: 20 dim: 1 } }
   include {
     phase: TRAIN
   }
@@ -24,7 +24,7 @@ layer {
   name: 'label_y'
   type: 'Input'
   top: 'label_y'
-  input_param { shape: { dim: 16 dim: 1 } }
+  input_param { shape: { dim: 20 dim: 1 } }
   include {
     phase: TRAIN
   }
@@ -34,7 +34,7 @@ layer {
   name: 'label_z'
   type: 'Input'
   top: 'label_z'
-  input_param { shape: { dim: 16 dim: 1 } }
+  input_param { shape: { dim: 20 dim: 1 } }
   include {
     phase: TRAIN
   }
@@ -44,7 +44,7 @@ layer {
   name: 'label_yaw'
   type: 'Input'
   top: 'label_yaw'
-  input_param { shape: { dim: 16 dim: 1 } }
+  input_param { shape: { dim: 20 dim: 1 } }
   include {
     phase: TRAIN
   }
