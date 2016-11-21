@@ -4,7 +4,7 @@ layer {
   name: 'data'
   type: 'Input'
   top: 'data'
-  input_param { shape: { dim: 1 dim: 6 dim: 240 dim: 320 } }
+  input_param { shape: { dim: 1 dim: 3 dim: 240 dim: 320 } }
   include {
     phase: TEST
   }
