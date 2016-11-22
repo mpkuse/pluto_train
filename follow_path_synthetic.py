@@ -85,9 +85,9 @@ class TestRenderer(ShowBase):
         self.cyt.setHpr( 198, -90, 0 )
         self.cyt2.setHpr( 198, -90, 0 )
         self.low_res.setHpr( 198, -90, 0 )
-        self.cyt.setScale(200)
-        self.cyt2.setScale(200)
-        self.low_res.setScale(200)
+        self.cyt.setScale(172)
+        self.cyt2.setScale(172)
+        self.low_res.setScale(172)
 
 
     def customCamera(self, nameIndx):
@@ -131,9 +131,11 @@ class TestRenderer(ShowBase):
 
         # Retrive from  the queue
         im = self.q_imStack.get() #320x240x3
+        y = self.q_labelStack.get()
+
         im_gry = np.mean( im, axis=2)
         im_statSquash = self.zNormalized( im.astype('float32') )
-        y = self.q_labelStack.get()
+
 
         # Set into caffe
         #print self.caffeNet.blobs['data'].data.shape #1x3x240x320
@@ -221,7 +223,7 @@ class TestRenderer(ShowBase):
 
 
     # Render-n-Learn task
-    def renderNlearnTask(self, task):
+    def renderNtestTask(self, task):
         if task.frame < 50: #do not do anything for 50 ticks, as spline's 1st node is at t=50
             return task.cont
 
@@ -269,6 +271,7 @@ class TestRenderer(ShowBase):
         # make note of the poses just set as this will take effect next
         if TestRenderer.renderIndx == 0:
             TestRenderer.renderIndx = TestRenderer.renderIndx + 1
+            # self.putBoxes(0,0,0, scale=100)
             self.prevPoses = poses
             return task.cont
 
@@ -349,7 +352,7 @@ class TestRenderer(ShowBase):
 
     def __init__(self, tr_model, arch_proto):
         ShowBase.__init__(self)
-        self.taskMgr.add( self.renderNlearnTask, "renderNlearnTask" ) #changing camera poses
+        self.taskMgr.add( self.renderNtestTask, "renderNtestTask" ) #changing camera poses
         self.taskMgr.add( self.putAxesTask, "putAxesTask" ) #draw co-ordinate axis
 
 
@@ -435,7 +438,7 @@ class TestRenderer(ShowBase):
         #
         # Set up Caffe (possibly in future TensorFLow)
         caffe.set_mode_gpu()
-        caffe.set_device(0)
+        caffe.set_device(1)
 
         caffe_net = arch_proto#'net_workshop/ResNet50_b_test.prototxt'
         caffe_model = tr_model#'x_ResNet50_b6_fov83_gnoise10_iter_25000.caffemodel.h5'

@@ -29,6 +29,9 @@ import time
 # Misc
 import TerminalColors
 import CubeMaker
+import censusTransform as ct
+import Noise
+
 
 class TrainRenderer(ShowBase):
     renderIndx=0
@@ -38,7 +41,10 @@ class TrainRenderer(ShowBase):
     def zNormalized(self, M ):
         M_mean = np.mean(M) # scalar
         M_std = np.std(M)
-        M_statSquash = (M - M_mean)/M_std
+        if M_std < 0.0001 :
+            return M
+
+        M_statSquash = (M - M_mean)/(M_std+.0001)
         return M_statSquash
 
     # Basic Mesh & Camera Setup
@@ -62,13 +68,13 @@ class TrainRenderer(ShowBase):
         self.cyt = self.loader.loadModel( 'model_l/l6/level_6_0_0.obj' )
         self.cyt2 = self.loader.loadModel( 'model_l/l6/level_6_128_0.obj' )
 
-        self.low_res = self.loader.loadModel( 'model_l/l0/level_0_0_0.obj' )
+        self.low_res = self.loader.loadModel( 'model_l/l3/level_3_0_0.obj' )
         print self.tcolor.OKGREEN, 'Done Loading Vertices', self.tcolor.ENDC
 
         print 'Attempt Loading Textures'
         self.loadAllTextures( self.cyt, 'model_l/l6/')
         self.loadAllTextures( self.cyt2, 'model_l/l6/')
-        self.loadAllTextures( self.low_res, 'model_l/l0/')
+        self.loadAllTextures( self.low_res, 'model_l/l3/')
         print self.tcolor.OKGREEN, 'Done Loading Textures', self.tcolor.ENDC
 
     def positionMesh(self):
@@ -83,9 +89,10 @@ class TrainRenderer(ShowBase):
         self.cyt.setHpr( 198, -90, 0 )
         self.cyt2.setHpr( 198, -90, 0 )
         self.low_res.setHpr( 198, -90, 0 )
-        self.cyt.setScale(200)
-        self.cyt2.setScale(200)
-        self.low_res.setScale(200)
+        self.cyt.setScale(172)
+        self.cyt2.setScale(172)
+        self.low_res.setScale(172)
+
     def customCamera(self, nameIndx):
         lens = self.camLens
         lens.setFov(83)
@@ -109,9 +116,10 @@ class TrainRenderer(ShowBase):
         return dr_list
 
     def learning_iteration(self):
-        #TODO
-        # print 'TODO'
-        """Does 1 iteration"""
+        """Does 1 iteration.
+            Basically retrives the rendered image and pose from queue. Preprocess/Purturb it
+            and feed it into caffe for training.
+        """
         # print 'DoCaffeTrainng'
         startTime = time.time()
         # print 'q_imStack.qsize() : ', self.q_imStack.qsize()
@@ -130,12 +138,21 @@ class TrainRenderer(ShowBase):
         # print "self.solver.net.blobs['label_x'].data",self.solver.net.blobs['label_x'].data.shape
         for i in range(batchsize):
             im = self.q_imStack.get() #320x240x3
-            im_gry = np.mean( im, axis=2)
-            im_statSquash = self.zNormalized( im.astype('float32') )
             y = self.q_labelStack.get()
+
+            im_noisy = Noise.noisy( 'gauss', im )
+            im_gry = np.mean( im_noisy, axis=2)
+
+
             # cv2.imwrite( str(i)+'__.png', x )
 
-            self.solver.net.blobs['data'].data[i,:,:,:] = im_statSquash.astype('float32').transpose(2,0,1)
+            cencusTR = ct.censusTransform( im_gry.astype('uint8') )
+            edges_out = cv2.Canny(cv2.blur(im_gry.astype('uint8'),(3,3)),100,200)
+
+
+            self.solver.net.blobs['data'].data[i,0,:,:] = self.zNormalized( im_gry.astype('float32') )
+            self.solver.net.blobs['data'].data[i,1,:,:] = self.zNormalized( cencusTR.astype('float32') )
+            self.solver.net.blobs['data'].data[i,1,:,:] = self.zNormalized( edges_out.astype('float32') )
             self.solver.net.blobs['label_x'].data[i,0] = y[0]
             self.solver.net.blobs['label_y'].data[i,0] = y[1]
             self.solver.net.blobs['label_z'].data[i,0] = y[2]
@@ -165,9 +182,9 @@ class TrainRenderer(ShowBase):
     def monte_carlo_sample(self):
         """ Gives a random 6-dof pose. Need to set params manually here.
                 X,Y,Z,  Yaw(abt Z-axis), Pitch(abt X-axis), Roll(abt Y-axis) """
-        X = np.random.uniform(-50,50)
-        Y = np.random.uniform(-100,100)
-        Z = np.random.uniform(50,100)
+        X = np.random.uniform(-150,150)
+        Y = np.random.uniform(-300,300)
+        Z = np.random.uniform(70,120)
 
         yaw = np.random.uniform(-60,60)
         roll = np.random.uniform(-5,5)
@@ -176,32 +193,47 @@ class TrainRenderer(ShowBase):
         return X,Y,Z, yaw,roll,pitch
 
     # Annotation-helpers for self.render
-    def putBoxes(self,X,Y,Z):
+    def putBoxes(self,X,Y,Z,r=1.,g=0.,b=0., scale=1.0):
         cube_x = CubeMaker.CubeMaker().generate()
-        cube_x.setColor(1.0,0.0,0.0)
-        cube_x.setScale(1)
+        cube_x.setColor(r,g,b)
+        cube_x.setScale(scale)
         cube_x.reparentTo(self.render)
         cube_x.setPos(X,Y,Z)
+
+    def putTrainingBox(self,task):
+        cube = CubeMaker.CubeMaker().generate()
+
+        cube.setTransparency(TransparencyAttrib.MAlpha)
+        cube.setAlphaScale(0.5)
+
+        # cube.setScale(10)
+        cube.setSx(150)
+        cube.setSy(300)
+        cube.setSz(25)
+        cube.reparentTo(self.render)
+        cube.setPos(0,0,95)
+
+
+
     def putAxesTask(self,task):
+        if (task.frame / 10) % 2 == 0:
+            cube_x = CubeMaker.CubeMaker().generate()
+            cube_x.setColor(1.0,0.0,0.0)
+            cube_x.setScale(1)
+            cube_x.reparentTo(self.render)
+            cube_x.setPos(task.frame,0,0)
 
+            cube_y = CubeMaker.CubeMaker().generate()
+            cube_y.setColor(0.0,1.0,0.0)
+            cube_y.setScale(1)
+            cube_y.reparentTo(self.render)
+            cube_y.setPos(0,task.frame,0)
 
-        cube_x = CubeMaker.CubeMaker().generate()
-        cube_x.setColor(1.0,0.0,0.0)
-        cube_x.setScale(1)
-        cube_x.reparentTo(self.render)
-        cube_x.setPos(task.frame,0,0)
-
-        cube_y = CubeMaker.CubeMaker().generate()
-        cube_y.setColor(0.0,1.0,0.0)
-        cube_y.setScale(1)
-        cube_y.reparentTo(self.render)
-        cube_y.setPos(0,task.frame,0)
-
-        cube_z = CubeMaker.CubeMaker().generate()
-        cube_z.setColor(0.0,0.0,1.0)
-        cube_z.setScale(1)
-        cube_z.reparentTo(self.render)
-        cube_z.setPos(0,0,task.frame)
+            cube_z = CubeMaker.CubeMaker().generate()
+            cube_z.setColor(0.0,0.0,1.0)
+            cube_z.setScale(1)
+            cube_z.reparentTo(self.render)
+            cube_z.setPos(0,0,task.frame)
         if task.time > 25:
             return None
         return task.cont
@@ -241,7 +273,13 @@ class TrainRenderer(ShowBase):
             poses[i,2] = randZ
             poses[i,3] = randYaw
 
-            # self.putBoxes(randX,randY,randZ)
+        #     self.putBoxes(randX,randY,randZ, scale=0.3)
+        #
+        # if task.frame < 100:
+        #     return task.cont
+        # else:
+        #     return None
+
 
 
         # make note of the poses just set as this will take effect next
@@ -305,15 +343,15 @@ class TrainRenderer(ShowBase):
 
 
 
-
+        # if( TrainRenderer.renderIndx > 50 ):
+        #     return None
 
         #
         # Prep for Next Iteration
         TrainRenderer.renderIndx = TrainRenderer.renderIndx + 1
         self.prevPoses = poses
 
-        # if( TrainRenderer.renderIndx > 5 ):
-            # return None
+
 
         return task.cont
 
@@ -323,6 +361,7 @@ class TrainRenderer(ShowBase):
         ShowBase.__init__(self)
         self.taskMgr.add( self.renderNlearnTask, "renderNlearnTask" ) #changing camera poses
         self.taskMgr.add( self.putAxesTask, "putAxesTask" ) #draw co-ordinate axis
+        self.taskMgr.add( self.putTrainingBox, "putTrainingBox" )
 
 
         # Misc Setup
