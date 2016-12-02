@@ -18,6 +18,8 @@ from direct.stdpy import thread
 import numpy as np
 import cv2
 # import caffe
+import tensorflow as tf
+import PlutoFlow as puf
 
 
 # Other System Libs
@@ -26,6 +28,7 @@ import argparse
 import Queue
 import copy
 import time
+import code
 
 
 # Misc
@@ -361,9 +364,9 @@ class TrainRenderer(ShowBase):
 
     def __init__(self, solver_proto, arch_proto):
         ShowBase.__init__(self)
-        self.taskMgr.add( self.renderNlearnTask, "renderNlearnTask" ) #changing camera poses
-        self.taskMgr.add( self.putAxesTask, "putAxesTask" ) #draw co-ordinate axis
-        self.taskMgr.add( self.putTrainingBox, "putTrainingBox" )
+        # self.taskMgr.add( self.renderNlearnTask, "renderNlearnTask" ) #changing camera poses
+        # self.taskMgr.add( self.putAxesTask, "putAxesTask" ) #draw co-ordinate axis
+        # self.taskMgr.add( self.putTrainingBox, "putTrainingBox" )
 
 
         # Misc Setup
@@ -456,10 +459,20 @@ class TrainRenderer(ShowBase):
         # self.caffeTrainingLossYaw = np.zeros(300000)
 
 
+        #
+        #Set up TensorFlow through puf (PlutoFlow)
+        puf_obj = puf.PlutoFlow()
 
+        # have placeholder `x`
+        x = tf.placeholder( 'float', [None,240,320,3], name='x' )
+        infer_op = puf_obj.resnet50_inference(x)
 
+        var_list = tf.trainable_variables()
+        print '--Trainable Variables--'
+        for vr in var_list:
+            print vr.name
 
-
+        code.interact(local=locals())
 
 
 #
