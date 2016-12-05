@@ -78,6 +78,26 @@ class PlutoFlow:
                     self._define_resnet_unit_var( 2048, [512,512,2048], [1,3,1], True )
 
 
+
+                ## Fully Connected Layer
+                # NOTE: This will make each layer identical, if need be in the
+                # future this can be changed to have different structures for
+                # prediction variables.
+                with tf.variable_scope( 'fully_connected', reuse=None ):
+                    for scope_str in ['x', 'y', 'z', 'yaw']:
+                        with tf.variable_scope( scope_str, reuse=None ):
+                            w_fc1 = tf.get_variable( 'w_fc1', [40960, 2000])
+                            w_fc2 = tf.get_variable( 'w_fc2', [2000, 200])
+                            w_fc3 = tf.get_variable( 'w_fc3', [200, 20])
+                            w_fc4 = tf.get_variable( 'w_fc4', [20, 1])
+
+                            #bias terms
+                            b_fc1 = tf.get_variable( 'b_fc1', [ 2000])
+                            b_fc2 = tf.get_variable( 'b_fc2', [ 200])
+                            b_fc3 = tf.get_variable( 'b_fc3', [ 20])
+                            b_fc4 = tf.get_variable( 'b_fc4', [ 1])
+
+
         # Place the towers on each of the GPUs and compute ops for
         # fwd_flow, avg_gradient and update_variables
 
@@ -89,6 +109,8 @@ class PlutoFlow:
         """ This function creates the computational graph and returns the op which give a
             prediction given an input batch x
         """
+
+        print 'Define ResNet50'
 
         with tf.variable_scope( 'trainable_vars', reuse=True ):
             wc_top = tf.get_variable( 'wc_top', [7,7,3,64] )
@@ -111,8 +133,8 @@ class PlutoFlow:
             with tf.variable_scope( 'res2c', reuse=True ):
                 conv_out = self.resnet_unit( conv_out, 256, [64,64,256], [1,3,1], short_circuit=True )
 
-            ## MAXPOOL
-            conv_out = self._maxpool2d( conv_out, k=2 )
+                ## MAXPOOL
+                conv_out = self._maxpool2d( conv_out, k=2 )
 
 
             ## RES3
@@ -128,9 +150,8 @@ class PlutoFlow:
             with tf.variable_scope( 'res3d', reuse=True ):
                 conv_out = self.resnet_unit( conv_out, 512, [128,128,512], [1,3,1], short_circuit=True )
 
-
-            ## MAXPOOL
-            conv_out = self._maxpool2d( conv_out, k=2 )
+                ## MAXPOOL
+                conv_out = self._maxpool2d( conv_out, k=2 )
 
 
             ## RES4
@@ -149,9 +170,8 @@ class PlutoFlow:
             with tf.variable_scope( 'res4e', reuse=True ):
                 conv_out = self.resnet_unit( conv_out, 1024, [256,256,1024], [1,3,1], short_circuit=True )
 
-
-            ## MAXPOOL
-            conv_out = self._maxpool2d( conv_out, k=2 )
+                ## MAXPOOL
+                conv_out = self._maxpool2d( conv_out, k=2 )
 
 
             ## RES5
@@ -163,6 +183,31 @@ class PlutoFlow:
 
             with tf.variable_scope( 'res5c', reuse=True ):
                 conv_out = self.resnet_unit( conv_out, 2048, [512,512,2048], [1,3,1], short_circuit=True )
+
+                ## MAXPOOL
+                conv_out = self._maxpool2d( conv_out, k=2 )
+
+
+            # Reshape Activations
+            print conv_out.get_shape().as_list()[1:]
+            n_activations = np.prod( conv_out.get_shape().as_list()[1:] )
+            fc = tf.reshape( conv_out, [-1, n_activations] )
+
+            # Fully Connected Layers
+            predictions = []
+            with tf.variable_scope( 'fully_connected', reuse=True):
+                for scope_str in ['x', 'y', 'z', 'yaw']:
+                    with tf.variable_scope( scope_str, reuse=True ):
+                        pred = self._define_fc( fc, n_activations, [2000, 200, 20, 1] )
+                        print pred
+                        predictions.append( pred )
+
+
+
+            # Weighted additions of the predictions
+            resnet_out = tf.mul( predictions[0], 1. ) + tf.mul( predictions[1], 1. ) + tf.mul( predictions[2], 1. ) + tf.mul( predictions[3], .5 )
+
+            return resnet_out
 
 
 
@@ -247,6 +292,35 @@ class PlutoFlow:
         # NORMPROP
         # return (tf.nn.relu(x) - 0.039894228) / 0.58381937
         return tf.nn.relu(x)
+
+    def _define_fc( self, fc, n_input, interim_input_dim ):
+        """ Define a fully connected layer
+                fc : the reshaped array
+                n_input : number of inputs
+                interim_input_dim : array of intermediate data dims
+
+                Note that this assume, the context is already in correct scope
+        """
+
+        a = n_input
+        b = interim_input_dim
+        w_fc1 = tf.get_variable( 'w_fc1', [a, b[0]])
+        w_fc2 = tf.get_variable( 'w_fc2', [b[0], b[1]])
+        w_fc3 = tf.get_variable( 'w_fc3', [b[1], b[2]])
+        w_fc4 = tf.get_variable( 'w_fc4', [b[2], 1])
+
+        b_fc1 = tf.get_variable( 'b_fc1', [ b[0]])
+        b_fc2 = tf.get_variable( 'b_fc2', [ b[1]])
+        b_fc3 = tf.get_variable( 'b_fc3', [ b[2]])
+        b_fc4 = tf.get_variable( 'b_fc4', [ 1])
+
+        fc1 = tf.nn.relu( tf.add( tf.matmul( fc, w_fc1 ), b_fc1 ) )
+        fc2 = tf.nn.relu( tf.add( tf.matmul( fc1, w_fc2 ), b_fc2 ) )
+        fc3 = tf.nn.relu( tf.add( tf.matmul( fc2, w_fc3 ), b_fc3 ) )
+        fc4 = tf.add( tf.matmul( fc3, w_fc4 ), b_fc4, name='stacked_fc_out' )
+        return fc4
+
+
 
     # Create some wrappers for simplicity
     def _conv2d_nobias(self, x, W, strides=1, relu_unit=True):
