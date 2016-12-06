@@ -29,3 +29,4 @@ net_workshop2/*.tmp
 trace__visualize/*
 transfer_learning/
 model*
+tf.logs/*

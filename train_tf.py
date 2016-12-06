@@ -137,48 +137,48 @@ class TrainRenderer(ShowBase):
 
 
 
-        batchsize = self.solver.net.blobs['data'].data.shape[0]
+        batchsize = 12
+        im_batch = np.zeros((batchsize,240,320,3))
+        label_batch = np.zeros((batchsize,4))
         # print 'batchsize', batchsize
         # print "self.solver.net.blobs['data'].data", self.solver.net.blobs['data'].data.shape
         # print "self.solver.net.blobs['label_x'].data",self.solver.net.blobs['label_x'].data.shape
         for i in range(batchsize):
-            im = self.q_imStack.get() #320x240x3
+            im = self.q_imStack.get() #240x320x3 RGB
             y = self.q_labelStack.get()
 
             im_noisy = Noise.noisy( 'gauss', im )
             im_gry = np.mean( im_noisy, axis=2)
 
 
-            # cv2.imwrite( str(i)+'__.png', x )
+            # print im.shape
+            # itr_indx = TrainRenderer.renderIndx
+            # cv2.imwrite( 'dump/'+str(itr_indx)+'_'+str(i)+'.png', cv2.cvtColor( im.astype('uint8'), cv2.COLOR_BGR2RGB ) )
 
-            cencusTR = ct.censusTransform( im_gry.astype('uint8') )
-            edges_out = cv2.Canny(cv2.blur(im_gry.astype('uint8'),(3,3)),100,200)
+            im_batch[i,:,:,:] = im
+            label_batch[i,0] = y[0]
+            label_batch[i,1] = y[1]
+            label_batch[i,2] = y[2]
+            label_batch[i,3] = y[3]
+            #TODO remember to z-normalize
 
 
-            self.solver.net.blobs['data'].data[i,0,:,:] = self.zNormalized( im_gry.astype('float32') )
-            self.solver.net.blobs['data'].data[i,1,:,:] = self.zNormalized( cencusTR.astype('float32') )
-            self.solver.net.blobs['data'].data[i,1,:,:] = self.zNormalized( edges_out.astype('float32') )
-            self.solver.net.blobs['label_x'].data[i,0] = y[0]
-            self.solver.net.blobs['label_y'].data[i,0] = y[1]
-            self.solver.net.blobs['label_z'].data[i,0] = y[2]
-            self.solver.net.blobs['label_yaw'].data[i,0] = y[3]
-            # print y[0], y[1], y[2], y[3]
+            # cencusTR = ct.censusTransform( im_gry.astype('uint8') )
+            # edges_out = cv2.Canny(cv2.blur(im_gry.astype('uint8'),(3,3)),100,200)
 
-        self.solver.step(1)
-        self.caffeTrainingLossX[self.caffeIter] = self.solver.net.blobs['loss_x'].data
-        self.caffeTrainingLossY[self.caffeIter] = self.solver.net.blobs['loss_y'].data
-        self.caffeTrainingLossZ[self.caffeIter] = self.solver.net.blobs['loss_z'].data
-        self.caffeTrainingLossYaw[self.caffeIter] = self.solver.net.blobs['loss_yaw'].data
-        if self.caffeIter % 50 == 0 and self.caffeIter>0:
-            print 'Writing File : train_loss.npy'
-            np.save('train_loss_x.npy', self.caffeTrainingLossX[0:self.caffeIter])
-            np.save('train_loss_y.npy', self.caffeTrainingLossY[0:self.caffeIter])
-            np.save('train_loss_z.npy', self.caffeTrainingLossZ[0:self.caffeIter])
-            np.save('train_loss_yaw.npy', self.caffeTrainingLossYaw[0:self.caffeIter])
+        _,aa = self.tensorflow_session.run( [self.tensorflow_apply_grad,self.tensorflow_cost], \
+                        feed_dict={self.tf_x:im_batch,\
+                        self.tf_label_x:label_batch[:,0:1], \
+                        self.tf_label_y:label_batch[:,1:2], \
+                        self.tf_label_z:label_batch[:,2:3], \
+                        self.tf_label_yaw:label_batch[:,3:4]} \
+                        )
 
-        #time.sleep(.3)
-        print 'my_iter=%d, solver_iter=%d, time=%f, loss_x=%f, lossYaw=%f' % (self.caffeIter, self.solver.iter, time.time() - startTime, self.caffeTrainingLossX[self.caffeIter], self.caffeTrainingLossYaw[self.caffeIter])
-        self.caffeIter = self.caffeIter + 1
+        print '[%4d] : cost=%0.4f ; time=%0.4f ms' %(self.tensorflow_iteration,aa, (time.time() - startTime)*1000.)
+
+
+
+        self.tensorflow_iteration = self.tensorflow_iteration + 1
 
 
 
@@ -344,7 +344,7 @@ class TrainRenderer(ShowBase):
         #
         # Call caffe iteration (reads from q_imStack and q_labelStack)
         #       Possibly upgrade to TensorFlow
-        # self.learning_iteration()
+        self.learning_iteration()
 
 
 
@@ -361,12 +361,26 @@ class TrainRenderer(ShowBase):
         return task.cont
 
 
+    ###### TENSORFLOW HELPERS ######
+    def define_l2_loss( self, infer_op, label_x, label_y, label_z, label_yaw ):
+        """ defines the l2-loss """
+        loss_x = tf.reduce_mean( tf.square( tf.sub( infer_op[0], label_x ) ) )
+        loss_y = tf.reduce_mean( tf.square( tf.sub( infer_op[1], label_y ) ) )
+        loss_z = tf.reduce_mean( tf.square( tf.sub( infer_op[2], label_z ) ) )
+        loss_yaw = tf.reduce_mean( tf.square( tf.sub( infer_op[3], label_yaw ) ) )
+
+        loss_total = tf.sqrt( tf.mul( loss_x, 1.0 ) + tf.mul( loss_y, 1.0 ) + tf.mul( loss_z, 1.0 ) + tf.mul( loss_yaw, 0.5 ) )
+        return loss_total
+
+    ###### END OF TF HELPERS ######
+
+
 
     def __init__(self, solver_proto, arch_proto):
         ShowBase.__init__(self)
-        # self.taskMgr.add( self.renderNlearnTask, "renderNlearnTask" ) #changing camera poses
-        # self.taskMgr.add( self.putAxesTask, "putAxesTask" ) #draw co-ordinate axis
-        # self.taskMgr.add( self.putTrainingBox, "putTrainingBox" )
+        self.taskMgr.add( self.renderNlearnTask, "renderNlearnTask" ) #changing camera poses
+        self.taskMgr.add( self.putAxesTask, "putAxesTask" ) #draw co-ordinate axis
+        self.taskMgr.add( self.putTrainingBox, "putTrainingBox" )
 
 
         # Misc Setup
@@ -461,18 +475,57 @@ class TrainRenderer(ShowBase):
 
         #
         #Set up TensorFlow through puf (PlutoFlow)
-        puf_obj = puf.PlutoFlow()
+        puf_obj = puf.PlutoFlow(trainable_on_device='/cpu:0')
 
-        # have placeholder `x`
-        x = tf.placeholder( 'float', [None,240,320,3], name='x' )
-        infer_op = puf_obj.resnet50_inference(x)
+        # have placeholder `x`, label_x, label_y, label_z, label_yaw
+        self.tf_x = tf.placeholder( 'float', [None,240,320,3], name='x' )
+        self.tf_label_x = tf.placeholder( 'float',   [None,1], name='label_x')
+        self.tf_label_y = tf.placeholder( 'float',   [None,1], name='label_y')
+        self.tf_label_z = tf.placeholder( 'float',   [None,1], name='label_z')
+        self.tf_label_yaw = tf.placeholder( 'float', [None,1], name='label_yaw')
 
+        # Define Deep Residual Nets
+        with tf.device( '/gpu:0'):
+            infer_op = puf_obj.resnet50_inference(self.tf_x)  #TODO: Define these inference ops on all the GPUs
+
+        # Print all Trainable Variables
         var_list = tf.trainable_variables()
-        print '--Trainable Variables--'
+        print '--Trainable Variables--', 'length= ', len(var_list)
         for vr in var_list:
-            print vr.name
+            print self.tcolor.OKGREEN, vr.name, vr.get_shape().as_list(), self.tcolor.ENDC
 
-        code.interact(local=locals())
+
+        # Cost function, SGD, Gradient computer
+        with tf.device( '/gpu:0' ):
+            self.tensorflow_optimizer = tf.train.AdamOptimizer( 0.0001 )
+
+        with tf.device( '/gpu:0' ):
+            self.tensorflow_cost = self.define_l2_loss( infer_op, self.tf_label_x, self.tf_label_y, self.tf_label_z, self.tf_label_yaw )
+            self.tensorflow_grad_compute = self.tensorflow_optimizer.compute_gradients( self.tensorflow_cost )
+
+        #TODO ideally have the averaged gradients from all GPUS here as arg for apply_grad()
+        self.tensorflow_apply_grad = self.tensorflow_optimizer.apply_gradients( self.tensorflow_grad_compute )
+
+
+        # TensorBoard stuff
+        # with tf.device( '/cpu:0' ):
+            # tf.scalar_summary( )
+
+        summary_writer = tf.train.SummaryWriter( 'tf.logs/initial_run', graph=tf.get_default_graph() )
+        summary_op = tf.merge_all_summaries()
+
+        # Fire up the TensorFlow-Session
+        self.tensorflow_session = tf.Session( config=tf.ConfigProto(log_device_placement=True, allow_soft_placement=True) )
+        self.tensorflow_session.run( tf.initialize_all_variables() )
+        tf.train.start_queue_runners(sess=self.tensorflow_session)
+
+
+        # Holding variables
+        self.tensorflow_iteration = 0
+
+        # code.interact(local=locals())
+
+
 
 
 #
