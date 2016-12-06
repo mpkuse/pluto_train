@@ -23,6 +23,8 @@ class PlutoFlow:
                 with tf.variable_scope( 'bn' ):
                     wc_top_beta  = tf.get_variable( 'wc_top_beta', [64], initializer=tf.constant_initializer(value=0.0) )
                     wc_top_gamma = tf.get_variable( 'wc_top_gamma', [64], initializer=tf.constant_initializer(value=1.0) )
+                    wc_top_pop_mean  = tf.get_variable( 'wc_top_pop_mean', [64], initializer=tf.constant_initializer(value=0.0), trainable=False )
+                    wc_top_pop_varn  = tf.get_variable( 'wc_top_pop_varn', [64], initializer=tf.constant_initializer(value=0.0), trainable=False )
 
 
 
@@ -119,7 +121,7 @@ class PlutoFlow:
 
         print 'Define ResNet50'
         #TODO: Expect x to be individually normalized, ie. for each image in the batch, it has mean=0 and var=1
-        #      BN this.
+        #      batch normalize input (linear scale only)
 
         with tf.variable_scope( 'trainable_vars', reuse=True ):
             wc_top = tf.get_variable( 'wc_top', [7,7,3,64] )
@@ -127,11 +129,13 @@ class PlutoFlow:
             with tf.variable_scope( 'bn' ):
                 wc_top_beta  = tf.get_variable( 'wc_top_beta', [64] )
                 wc_top_gamma = tf.get_variable( 'wc_top_gamma', [64] )
+                wc_top_pop_mean  = tf.get_variable( 'wc_top_pop_mean', [64] )
+                wc_top_pop_varn  = tf.get_variable( 'wc_top_pop_varn', [64] )
 
 
 
 
-            conv1 = self._conv2d( x, wc_top, bc_top, W_beta=wc_top_beta, W_gamma=wc_top_gamma, strides=2 )
+            conv1 = self._conv2d( x, wc_top, bc_top, pop_mean=wc_top_pop_mean, pop_varn=wc_top_pop_varn, is_training=True, W_beta=wc_top_beta, W_gamma=wc_top_gamma, strides=2 )
             conv1 = self._maxpool2d( conv1, k=2 )
 
             input_var = conv1
@@ -251,15 +255,22 @@ class PlutoFlow:
         wc3 = tf.get_variable( 'wc3', [c[2],c[2],b[1],b[2]] )
 
         # BN variables
+        #BN Adopted from http://r2rt.com/implementing-batch-normalization-in-tensorflow.html
         with tf.variable_scope( 'bn' ):
-            wc1_bn_beta  = tf.get_variable( 'wc1_beta', [b[0]], initializer=tf.constant_initializer(value=0.0) )
-            wc1_bn_gamma = tf.get_variable( 'wc1_gamma', [b[0]], initializer=tf.constant_initializer(value=1.0) )
+            wc1_bn_beta  = tf.get_variable( 'wc1_beta', [b[0]] )
+            wc1_bn_gamma = tf.get_variable( 'wc1_gamma', [b[0]] )
+            wc1_bn_pop_mean  = tf.get_variable( 'wc1_pop_mean', [b[0]] )
+            wc1_bn_pop_varn = tf.get_variable( 'wc1_pop_varn', [b[0]] )
 
-            wc2_bn_beta  = tf.get_variable( 'wc2_beta', [b[1]], initializer=tf.constant_initializer(value=0.0) )
-            wc2_bn_gamma = tf.get_variable( 'wc2_gamma', [b[1]], initializer=tf.constant_initializer(value=1.0) )
+            wc2_bn_beta  = tf.get_variable( 'wc2_beta', [b[1]] )
+            wc2_bn_gamma = tf.get_variable( 'wc2_gamma', [b[1]] )
+            wc2_bn_pop_mean = tf.get_variable( 'wc2_pop_mean', [b[1]] )
+            wc2_bn_pop_varn = tf.get_variable( 'wc2_pop_varn', [b[1]] )
 
-            wc3_bn_beta  = tf.get_variable( 'wc3_beta', [b[2]], initializer=tf.constant_initializer(value=0.0) )
-            wc3_bn_gamma = tf.get_variable( 'wc3_gamma', [b[2]], initializer=tf.constant_initializer(value=1.0) )
+            wc3_bn_beta  = tf.get_variable( 'wc3_beta', [b[2]] )
+            wc3_bn_gamma = tf.get_variable( 'wc3_gamma', [b[2]] )
+            wc3_bn_pop_mean  = tf.get_variable( 'wc3_pop_mean', [b[2]] )
+            wc3_bn_pop_varn  = tf.get_variable( 'wc3_pop_varn', [b[2]] )
 
 
         self._print_tensor_info( 'Request Var', wc1 )
@@ -267,9 +278,9 @@ class PlutoFlow:
         self._print_tensor_info( 'Request Var', wc3 )
 
 
-        conv_1 = self._conv2d_nobias( input_tensor, wc1, W_beta=wc1_bn_beta, W_gamma=wc1_bn_gamma )
-        conv_2 = self._conv2d_nobias( conv_1, wc2, W_beta=wc2_bn_beta, W_gamma=wc2_bn_gamma )
-        conv_3 = self._conv2d_nobias( conv_2, wc3, W_beta=wc3_bn_beta, W_gamma=wc3_bn_gamma, relu_unit=False )
+        conv_1 = self._conv2d_nobias( input_tensor, wc1, pop_mean=wc1_bn_pop_mean, pop_varn=wc1_bn_pop_varn, is_training=True, W_beta=wc1_bn_beta, W_gamma=wc1_bn_gamma )
+        conv_2 = self._conv2d_nobias( conv_1, wc2,  pop_mean=wc2_bn_pop_mean, pop_varn=wc2_bn_pop_varn, is_training=True, W_beta=wc2_bn_beta, W_gamma=wc2_bn_gamma )
+        conv_3 = self._conv2d_nobias( conv_2, wc3, pop_mean=wc3_bn_pop_mean, pop_varn=wc3_bn_pop_varn, is_training=True,  W_beta=wc3_bn_beta, W_gamma=wc3_bn_gamma, relu_unit=False )
         self._print_tensor_info( 'conv_1', conv_1 )
         self._print_tensor_info( 'conv_2', conv_2 )
         self._print_tensor_info( 'conv_3', conv_3 )
@@ -281,8 +292,11 @@ class PlutoFlow:
             with tf.variable_scope( 'bn' ):
                 wc_side_bn_beta = tf.get_variable( 'wc_side_bn_beta', [b[2]] )
                 wc_side_bn_gamma = tf.get_variable( 'wc_side_bn_gamma', [b[2]] )
+                wc_side_bn_pop_mean = tf.get_variable( 'wc_side_pop_mean', [b[2]] )
+                wc_side_bn_pop_varn = tf.get_variable( 'wc_side_pop_varn', [b[2]] )
+
             self._print_tensor_info( 'Request Var', wc_side )
-            conv_side = self._conv2d_nobias( input_tensor, wc_side, W_beta=wc_side_bn_beta, W_gamma=wc_side_bn_gamma, relu_unit=False )
+            conv_side = self._conv2d_nobias( input_tensor, wc_side, pop_mean=wc_side_bn_pop_mean, pop_varn=wc_side_bn_pop_varn, is_training=True, W_beta=wc_side_bn_beta, W_gamma=wc_side_bn_gamma, relu_unit=False )
             conv_out = tf.nn.relu( tf.add( conv_3, conv_side ) )
 
         self._print_tensor_info( 'conv_out', conv_out )
@@ -304,21 +318,32 @@ class PlutoFlow:
         wc2 = tf.get_variable( 'wc2', [c[1],c[1],b[0],b[1]], initializer=tf.contrib.layers.xavier_initializer_conv2d() )
         wc3 = tf.get_variable( 'wc3', [c[2],c[2],b[1],b[2]], initializer=tf.contrib.layers.xavier_initializer_conv2d() )
 
+        #BN Adopted from http://r2rt.com/implementing-batch-normalization-in-tensorflow.html
         with tf.variable_scope( 'bn' ):
             wc1_bn_beta  = tf.get_variable( 'wc1_beta', [b[0]], initializer=tf.constant_initializer(value=0.0) )
             wc1_bn_gamma = tf.get_variable( 'wc1_gamma', [b[0]], initializer=tf.constant_initializer(value=1.0) )
+            wc1_bn_pop_mean  = tf.get_variable( 'wc1_pop_mean', [b[0]], initializer=tf.constant_initializer(value=0.0), trainable=False )
+            wc1_bn_pop_varn = tf.get_variable( 'wc1_pop_varn', [b[0]], initializer=tf.constant_initializer(value=0.0), trainable=False )
+
 
             wc2_bn_beta  = tf.get_variable( 'wc2_beta', [b[1]], initializer=tf.constant_initializer(value=0.0) )
             wc2_bn_gamma = tf.get_variable( 'wc2_gamma', [b[1]], initializer=tf.constant_initializer(value=1.0) )
+            wc2_bn_pop_mean = tf.get_variable( 'wc2_pop_mean', [b[1]], initializer=tf.constant_initializer(value=0.0), trainable=False )
+            wc2_bn_pop_varn = tf.get_variable( 'wc2_pop_varn', [b[1]], initializer=tf.constant_initializer(value=0.0), trainable=False )
+
 
             wc3_bn_beta  = tf.get_variable( 'wc3_beta', [b[2]], initializer=tf.constant_initializer(value=0.0) )
             wc3_bn_gamma = tf.get_variable( 'wc3_gamma', [b[2]], initializer=tf.constant_initializer(value=1.0) )
+            wc3_bn_pop_mean  = tf.get_variable( 'wc3_pop_mean', [b[2]], initializer=tf.constant_initializer(value=0.0), trainable=False )
+            wc3_bn_pop_varn  = tf.get_variable( 'wc3_pop_varn', [b[2]], initializer=tf.constant_initializer(value=0.0), trainable=False )
 
         if short_circuit == False:
             wc_side = tf.get_variable( 'wc1_side', [1,1,a,b[2]], initializer=tf.contrib.layers.xavier_initializer_conv2d() )
             with tf.variable_scope( 'bn' ):
                 wc_side_bn_beta = tf.get_variable( 'wc_side_bn_beta', [b[2]], initializer=tf.constant_initializer(value=0.0) )
                 wc_side_bn_gamma = tf.get_variable( 'wc_side_bn_gamma', [b[2]], initializer=tf.constant_initializer(value=1.0) )
+                wc_side_bn_pop_mean = tf.get_variable( 'wc_side_pop_mean', [b[2]], initializer=tf.constant_initializer(value=0.0), trainable=False )
+                wc_side_bn_pop_varn = tf.get_variable( 'wc_side_pop_varn', [b[2]], initializer=tf.constant_initializer(value=0.0), trainable=False )
 
 
 
@@ -353,15 +378,28 @@ class PlutoFlow:
 
 
     # Create some wrappers for simplicity
-    def _conv2d(self, x, W, b, W_beta=None, W_gamma=None, strides=1):
+    def _conv2d(self, x, W, b, pop_mean, pop_varn, is_training, W_beta=None, W_gamma=None, strides=1):
         # Conv2D wrapper, with bias and relu activation
 
         x = tf.nn.conv2d(x, W, strides=[1, strides, strides, 1], padding='SAME')
         x = tf.nn.bias_add(x, b)
 
-        with tf.variable_scope( 'bn' ):
-            batch_mean, batch_var = tf.nn.moments( x, [0,1,2], name='moments' )
-            normed_x = tf.nn.batch_normalization( x, batch_mean, batch_var, W_beta, W_gamma, 1E-3, name='apply_moments')
+        if is_training == True: #Phase : Training
+            with tf.variable_scope( 'bn' ):
+                # compute batch_mean
+                batch_mean, batch_var = tf.nn.moments( x, [0,1,2], name='moments' )
+
+                # update population_mean
+                decay = 0.999
+                train_mean = tf.assign(pop_mean, pop_mean * decay + batch_mean * (1.0 - decay))
+                train_var = tf.assign(pop_varn, pop_varn * decay + batch_var * (1.0 - decay))
+
+                with tf.control_dependencies( [train_mean, train_var] ):
+                    normed_x = tf.nn.batch_normalization( x, batch_mean, batch_var, W_beta, W_gamma, 1E-3, name='apply_moments_training')
+        else : #Phase : Testing
+            with tf.variable_scope( 'bn' ):
+                normed_x = tf.nn.batch_normalization( x, pop_mean, pop_varn, W_beta, W_gamma, 1E-3, name='apply_moments_testing')
+
 
         # NORMPROP
         # return (tf.nn.relu(x) - 0.039894228) / 0.58381937
@@ -370,7 +408,7 @@ class PlutoFlow:
 
 
     # Create some wrappers for simplicity
-    def _conv2d_nobias(self, x, W, W_beta=None, W_gamma=None, strides=1, relu_unit=True):
+    def _conv2d_nobias(self, x, W, pop_mean, pop_varn, is_training, W_beta=None, W_gamma=None, strides=1, relu_unit=True, ):
         # Conv2D wrapper, with bias and relu activation
 
         x = tf.nn.conv2d(x, W, strides=[1, strides, strides, 1], padding='SAME')
@@ -379,9 +417,26 @@ class PlutoFlow:
         # return (tf.nn.relu(x) - 0.039894228) / 0.58381937
 
         # Batch-Norm (BN)
-        with tf.variable_scope( 'bn' ):
-            batch_mean, batch_var = tf.nn.moments( x, [0,1,2], name='moments' )
-            normed_x = tf.nn.batch_normalization( x, batch_mean, batch_var, W_beta, W_gamma, 1E-3, name='apply_moments')
+
+        #if training then compute batch mean, update pop_mean, do normalization with batch mean
+        #if testing, then do notmalization with pop_mean
+
+        if is_training == True: #Phase : Training
+            with tf.variable_scope( 'bn' ):
+                # compute batch_mean
+                batch_mean, batch_var = tf.nn.moments( x, [0,1,2], name='moments' )
+
+                # update population_mean
+                decay = 0.999
+                train_mean = tf.assign(pop_mean, pop_mean * decay + batch_mean * (1.0 - decay))
+                train_var = tf.assign(pop_varn, pop_varn * decay + batch_var * (1.0 - decay))
+
+                with tf.control_dependencies( [train_mean, train_var] ):
+                    normed_x = tf.nn.batch_normalization( x, batch_mean, batch_var, W_beta, W_gamma, 1E-3, name='apply_moments_training')
+        else : #Phase : Testing
+            with tf.variable_scope( 'bn' ):
+                normed_x = tf.nn.batch_normalization( x, pop_mean, pop_varn, W_beta, W_gamma, 1E-3, name='apply_moments_testing')
+
 
 
         if relu_unit == True:

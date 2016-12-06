@@ -166,7 +166,7 @@ class TrainRenderer(ShowBase):
             # cencusTR = ct.censusTransform( im_gry.astype('uint8') )
             # edges_out = cv2.Canny(cv2.blur(im_gry.astype('uint8'),(3,3)),100,200)
 
-        _,aa = self.tensorflow_session.run( [self.tensorflow_apply_grad,self.tensorflow_cost], \
+        _,aa,ss = self.tensorflow_session.run( [self.tensorflow_apply_grad,self.tensorflow_cost,self.tensorflow_summary_op], \
                         feed_dict={self.tf_x:im_batch,\
                         self.tf_label_x:label_batch[:,0:1], \
                         self.tf_label_y:label_batch[:,1:2], \
@@ -174,7 +174,12 @@ class TrainRenderer(ShowBase):
                         self.tf_label_yaw:label_batch[:,3:4]} \
                         )
 
-        print '[%4d] : cost=%0.4f ; time=%0.4f ms' %(self.tensorflow_iteration,aa, (time.time() - startTime)*1000.)
+        print '[%4d] : cost=%0.4f ; time=%0.4f ms' %(self.tensorflow_iteration, aa, (time.time() - startTime)*1000.)
+
+        # Write Summary for TensorBoard
+        if self.tensorflow_iteration % 20 == 0:
+            print 'write_summary()'
+            self.tensorflow_summary_writer.add_summary( ss, self.tensorflow_iteration )
 
 
 
@@ -508,11 +513,10 @@ class TrainRenderer(ShowBase):
 
 
         # TensorBoard stuff
-        # with tf.device( '/cpu:0' ):
-            # tf.scalar_summary( )
+        self.tensorflow_summary_writer = tf.train.SummaryWriter( 'tf.logs/initial_run', graph=tf.get_default_graph() )
+        self.tensorflow_summary_op = tf.merge_all_summaries()
 
-        summary_writer = tf.train.SummaryWriter( 'tf.logs/initial_run', graph=tf.get_default_graph() )
-        summary_op = tf.merge_all_summaries()
+        tf.scalar_summary( 'cost', self.tensorflow_cost )
 
         # Fire up the TensorFlow-Session
         self.tensorflow_session = tf.Session( config=tf.ConfigProto(log_device_placement=True, allow_soft_placement=True) )
