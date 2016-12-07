@@ -166,20 +166,31 @@ class TrainRenderer(ShowBase):
             # cencusTR = ct.censusTransform( im_gry.astype('uint8') )
             # edges_out = cv2.Canny(cv2.blur(im_gry.astype('uint8'),(3,3)),100,200)
 
+        lr = self.get_learning_rate( self.tensorflow_iteration )
+
         _,aa,ss = self.tensorflow_session.run( [self.tensorflow_apply_grad,self.tensorflow_cost,self.tensorflow_summary_op], \
                         feed_dict={self.tf_x:im_batch,\
                         self.tf_label_x:label_batch[:,0:1], \
                         self.tf_label_y:label_batch[:,1:2], \
                         self.tf_label_z:label_batch[:,2:3], \
-                        self.tf_label_yaw:label_batch[:,3:4]} \
-                        )
+                        self.tf_label_yaw:label_batch[:,3:4], \
+                        self.tf_learning_rate:lr} )
 
         print '[%4d] : cost=%0.4f ; time=%0.4f ms' %(self.tensorflow_iteration, aa, (time.time() - startTime)*1000.)
 
         # Write Summary for TensorBoard
-        if self.tensorflow_iteration % 20 == 0:
+        if self.tensorflow_iteration % 20 == 0 and self.tensorflow_iteration > 0:
             print 'write_summary()'
             self.tensorflow_summary_writer.add_summary( ss, self.tensorflow_iteration )
+
+        # Snapshot model
+        if self.tensorflow_iteration % 100 == 0 and self.tensorflow_iteration > 0:
+            sess = self.tensorflow_session
+            pth = self.PARAM_MODEL_SAVE_PREFIX
+            step = self.tensorflow_iteration
+            save_path = self.tensorflow_saver.save( sess, pth, global_step=step )
+            print 'snapshot model()', save_path
+
 
 
 
@@ -187,6 +198,15 @@ class TrainRenderer(ShowBase):
 
 
 
+    def get_learning_rate( self, n_iteration):
+        if n_iteration < 100:
+            return 0.001
+        elif n_iteration >= 100 and n_iteration < 300:
+            return 0.001/2.
+        elif n_iteration >= 300 and n_iteration < 500:
+            return 0.001/4
+        else:
+            return 0.0001
 
 
     def monte_carlo_sample(self):
@@ -381,12 +401,15 @@ class TrainRenderer(ShowBase):
 
 
 
-    def __init__(self, solver_proto, arch_proto):
+    def __init__(self, TENSORBOARD_PREFIX, MODEL_SAVE_PREFIX):
         ShowBase.__init__(self)
         self.taskMgr.add( self.renderNlearnTask, "renderNlearnTask" ) #changing camera poses
         self.taskMgr.add( self.putAxesTask, "putAxesTask" ) #draw co-ordinate axis
         self.taskMgr.add( self.putTrainingBox, "putTrainingBox" )
 
+        # Note params
+        self.PARAM_TENSORBOARD_PREFIX = TENSORBOARD_PREFIX
+        self.PARAM_MODEL_SAVE_PREFIX = MODEL_SAVE_PREFIX
 
         # Misc Setup
         self.render.setAntialias(AntialiasAttrib.MAuto)
@@ -493,16 +516,11 @@ class TrainRenderer(ShowBase):
         with tf.device( '/gpu:0'):
             infer_op = puf_obj.resnet50_inference(self.tf_x)  #TODO: Define these inference ops on all the GPUs
 
-        # Print all Trainable Variables
-        var_list = tf.trainable_variables()
-        print '--Trainable Variables--', 'length= ', len(var_list)
-        for vr in var_list:
-            print self.tcolor.OKGREEN, vr.name, vr.get_shape().as_list(), self.tcolor.ENDC
-
 
         # Cost function, SGD, Gradient computer
-        with tf.device( '/gpu:0' ):
-            self.tensorflow_optimizer = tf.train.AdamOptimizer( 0.0001 )
+        with tf.device( '/cpu:0' ):
+            self.tf_learning_rate = tf.placeholder( 'float', shape=[], name='learning_rate' )
+            self.tensorflow_optimizer = tf.train.AdamOptimizer( self.tf_learning_rate )
 
         with tf.device( '/gpu:0' ):
             self.tensorflow_cost = self.define_l2_loss( infer_op, self.tf_label_x, self.tf_label_y, self.tf_label_z, self.tf_label_yaw )
@@ -512,11 +530,24 @@ class TrainRenderer(ShowBase):
         self.tensorflow_apply_grad = self.tensorflow_optimizer.apply_gradients( self.tensorflow_grad_compute )
 
 
-        # TensorBoard stuff
-        self.tensorflow_summary_writer = tf.train.SummaryWriter( 'tf.logs/initial_run', graph=tf.get_default_graph() )
-        self.tensorflow_summary_op = tf.merge_all_summaries()
+        # Print all Trainable Variables
+        var_list = tf.trainable_variables()
+        print '--Trainable Variables--', 'length= ', len(var_list)
+        total_n_nums = []
+        for vr in var_list:
+            shape = vr.get_shape().as_list()
+            n_nums = np.prod(shape)
+            total_n_nums.append( n_nums )
+            print self.tcolor.OKGREEN, vr.name, shape, n_nums, self.tcolor.ENDC
 
+        print self.tcolor.OKGREEN, 'Total Trainable Params (floats): ', sum( total_n_nums )
+        print 'Not counting the pop_mean and pop_varn as these were set to be non trainable', self.tcolor.ENDC
+
+
+
+        #summary
         tf.scalar_summary( 'cost', self.tensorflow_cost )
+        tf.scalar_summary( 'lr', self.tf_learning_rate )
 
         # Fire up the TensorFlow-Session
         self.tensorflow_session = tf.Session( config=tf.ConfigProto(log_device_placement=True, allow_soft_placement=True) )
@@ -527,6 +558,14 @@ class TrainRenderer(ShowBase):
         # Holding variables
         self.tensorflow_iteration = 0
 
+        # TensorBoard Writer
+        self.tensorflow_summary_writer = tf.train.SummaryWriter( self.PARAM_TENSORBOARD_PREFIX, graph=tf.get_default_graph() )
+        self.tensorflow_summary_op = tf.merge_all_summaries()
+
+
+        # Model Saver
+        self.tensorflow_saver = tf.train.Saver()
+
         # code.interact(local=locals())
 
 
@@ -535,28 +574,28 @@ class TrainRenderer(ShowBase):
 #
 # Parse Arguments
 parser = argparse.ArgumentParser()
-parser.add_argument("-s", "--solver_proto", help="Solver Prototxt file")
-parser.add_argument("-a", "--arch_proto", help="Net archi prototxt file")
+parser.add_argument("-t", "--tensorboard_prefix", help="Path for tensorboard")
+parser.add_argument("-s", "--model_save_prefix", help="Path for saving model")
 args = parser.parse_args()
 
 tcolor = TerminalColors.bcolors()
 
-if args.solver_proto:
-	solver_proto = args.solver_proto
+if args.tensorboard_prefix:
+	tensorboard_prefix = args.tensorboard_prefix
 else:
-    solver_proto = 'solver.prototxt'
+    tensorboard_prefix = 'tf.logs/default'
 
 
-if args.arch_proto:
-	arch_proto = args.arch_proto
+if args.model_save_prefix:
+	model_save_prefix = args.model_save_prefix
 else:
-    arch_proto = 'net_workshop/ResNet50_b.prototxt'
+    model_save_prefix = 'tf.models/model'
 
 
-print tcolor.HEADER, 'solver_proto : ', solver_proto, tcolor.ENDC
-print 'arch_proto   : ', arch_proto
+print tcolor.HEADER, 'tensorboard_prefix : ', tensorboard_prefix, tcolor.ENDC
+print 'model_save_prefix   : ', model_save_prefix
 
 
 
-app = TrainRenderer(solver_proto, arch_proto)
+app = TrainRenderer(tensorboard_prefix, model_save_prefix)
 app.run()

@@ -123,6 +123,8 @@ class PlutoFlow:
         #TODO: Expect x to be individually normalized, ie. for each image in the batch, it has mean=0 and var=1
         #      batch normalize input (linear scale only)
 
+        tf.histogram_summary( 'input', x )
+
         with tf.variable_scope( 'trainable_vars', reuse=True ):
             wc_top = tf.get_variable( 'wc_top', [7,7,3,64] )
             bc_top = tf.get_variable( 'bc_top', [64] )
@@ -134,9 +136,9 @@ class PlutoFlow:
 
 
 
-
             conv1 = self._conv2d( x, wc_top, bc_top, pop_mean=wc_top_pop_mean, pop_varn=wc_top_pop_varn, is_training=True, W_beta=wc_top_beta, W_gamma=wc_top_gamma, strides=2 )
             conv1 = self._maxpool2d( conv1, k=2 )
+            tf.histogram_summary( 'conv1', conv1 )
 
             input_var = conv1
 
@@ -209,6 +211,7 @@ class PlutoFlow:
             print conv_out.get_shape().as_list()[1:]
             n_activations = np.prod( conv_out.get_shape().as_list()[1:] )
             fc = tf.reshape( conv_out, [-1, n_activations] )
+            tf.histogram_summary( 'fc', fc )
 
             # Fully Connected Layers
             predictions = []

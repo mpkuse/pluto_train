@@ -30,3 +30,4 @@ trace__visualize/*
 transfer_learning/
 model*
 tf.logs/*
+tf.models/*
