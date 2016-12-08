@@ -87,7 +87,7 @@ class PlutoFlow:
                 with tf.variable_scope( 'fully_connected', reuse=None ):
                     for scope_str in ['x', 'y', 'z', 'yaw']:
                         with tf.variable_scope( scope_str, reuse=None ):
-                            w_fc1 = tf.get_variable( 'w_fc1', [40960, 2000]) #This `40960` better be un-hardcoded. Donno a way to have this number in the constructor
+                            w_fc1 = tf.get_variable( 'w_fc1', [2048, 2000]) #This `40960` better be un-hardcoded. Donno a way to have this number in the constructor
                             w_fc2 = tf.get_variable( 'w_fc2', [2000, 200])
                             w_fc3 = tf.get_variable( 'w_fc3', [200, 20])
                             w_fc4 = tf.get_variable( 'w_fc4', [20, 1])
@@ -204,7 +204,7 @@ class PlutoFlow:
                 conv_out = self.resnet_unit( conv_out, 2048, [512,512,2048], [1,3,1], short_circuit=True )
 
                 ## MAXPOOL
-                conv_out = self._maxpool2d( conv_out, k=2 ) #TODO: This k=2 should possibly change to k=7? basically, maxpool (or avg pool) such that each channel is 1 number
+                conv_out = self._avgpool2d( conv_out, k1=8, k2=10 )
 
 
             # Reshape Activations
@@ -454,6 +454,15 @@ class PlutoFlow:
     def _maxpool2d(self, x, k=2):
         # MaxPool2D wrapper
         pool_out = tf.nn.max_pool(x, ksize=[1, k, k, 1], strides=[1, k, k, 1],
+                              padding='SAME')
+        # NORMPROP
+        # return (pool_out - 1.4850) / 0.7010
+        return pool_out
+
+
+    def _avgpool2d(self, x, k1=2, k2=2):
+        # MaxPool2D wrapper
+        pool_out = tf.nn.avg_pool(x, ksize=[1, k1, k2, 1], strides=[1, k1, k2, 1],
                               padding='SAME')
         # NORMPROP
         # return (pool_out - 1.4850) / 0.7010

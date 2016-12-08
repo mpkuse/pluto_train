@@ -155,12 +155,14 @@ class TrainRenderer(ShowBase):
             # itr_indx = TrainRenderer.renderIndx
             # cv2.imwrite( 'dump/'+str(itr_indx)+'_'+str(i)+'.png', cv2.cvtColor( im.astype('uint8'), cv2.COLOR_BGR2RGB ) )
 
-            im_batch[i,:,:,:] = im
+            #TODO remember to z-normalize
+            im_batch[i,:,:,0] = self.zNormalized( im[:,:,0] )
+            im_batch[i,:,:,1] = self.zNormalized( im[:,:,1] )
+            im_batch[i,:,:,2] = self.zNormalized( im[:,:,2] )
             label_batch[i,0] = y[0]
             label_batch[i,1] = y[1]
             label_batch[i,2] = y[2]
             label_batch[i,3] = y[3]
-            #TODO remember to z-normalize
 
 
             # cencusTR = ct.censusTransform( im_gry.astype('uint8') )
@@ -179,12 +181,12 @@ class TrainRenderer(ShowBase):
         print '[%4d] : cost=%0.4f ; time=%0.4f ms' %(self.tensorflow_iteration, aa, (time.time() - startTime)*1000.)
 
         # Write Summary for TensorBoard
-        if self.tensorflow_iteration % 20 == 0 and self.tensorflow_iteration > 0:
+        if self.tensorflow_iteration % self.PARAM_WRITE_SUMMARY_EVERY == 0 and self.tensorflow_iteration > 0:
             print 'write_summary()'
             self.tensorflow_summary_writer.add_summary( ss, self.tensorflow_iteration )
 
         # Snapshot model
-        if self.tensorflow_iteration % 100 == 0 and self.tensorflow_iteration > 0:
+        if self.tensorflow_iteration % self.PARAM_WRITE_TF_MODEL_EVERY == 0 and self.tensorflow_iteration > 0:
             sess = self.tensorflow_session
             pth = self.PARAM_MODEL_SAVE_PREFIX
             step = self.tensorflow_iteration
@@ -199,14 +201,15 @@ class TrainRenderer(ShowBase):
 
 
     def get_learning_rate( self, n_iteration):
+        base_lr = 0.001
         if n_iteration < 100:
-            return 0.001
+            return base_lr
         elif n_iteration >= 100 and n_iteration < 300:
-            return 0.001/2.
+            return base_lr/2.
         elif n_iteration >= 300 and n_iteration < 500:
-            return 0.001/4
+            return base_lr/4
         else:
-            return 0.0001
+            return base_lr/10
 
 
     def monte_carlo_sample(self):
@@ -401,7 +404,7 @@ class TrainRenderer(ShowBase):
 
 
 
-    def __init__(self, TENSORBOARD_PREFIX, MODEL_SAVE_PREFIX):
+    def __init__(self, TENSORBOARD_PREFIX, WRITE_SUMMARY_EVERY, MODEL_SAVE_PREFIX, WRITE_TF_MODEL_EVERY, MODEL_RESTORE):
         ShowBase.__init__(self)
         self.taskMgr.add( self.renderNlearnTask, "renderNlearnTask" ) #changing camera poses
         self.taskMgr.add( self.putAxesTask, "putAxesTask" ) #draw co-ordinate axis
@@ -410,6 +413,11 @@ class TrainRenderer(ShowBase):
         # Note params
         self.PARAM_TENSORBOARD_PREFIX = TENSORBOARD_PREFIX
         self.PARAM_MODEL_SAVE_PREFIX = MODEL_SAVE_PREFIX
+        self.PARAM_MODEL_RESTORE = MODEL_RESTORE
+
+        self.PARAM_WRITE_SUMMARY_EVERY = WRITE_SUMMARY_EVERY
+        self.PARAM_WRITE_TF_MODEL_EVERY = WRITE_TF_MODEL_EVERY
+
 
         # Misc Setup
         self.render.setAntialias(AntialiasAttrib.MAuto)
@@ -523,7 +531,8 @@ class TrainRenderer(ShowBase):
             self.tensorflow_optimizer = tf.train.AdamOptimizer( self.tf_learning_rate )
 
         with tf.device( '/gpu:0' ):
-            self.tensorflow_cost = self.define_l2_loss( infer_op, self.tf_label_x, self.tf_label_y, self.tf_label_z, self.tf_label_yaw )
+            with tf.variable_scope( 'loss'):
+                self.tensorflow_cost = self.define_l2_loss( infer_op, self.tf_label_x, self.tf_label_y, self.tf_label_z, self.tf_label_yaw )
             self.tensorflow_grad_compute = self.tensorflow_optimizer.compute_gradients( self.tensorflow_cost )
 
         #TODO ideally have the averaged gradients from all GPUS here as arg for apply_grad()
@@ -549,22 +558,39 @@ class TrainRenderer(ShowBase):
         tf.scalar_summary( 'cost', self.tensorflow_cost )
         tf.scalar_summary( 'lr', self.tf_learning_rate )
 
+
+        # Model Saver
+        self.tensorflow_saver = tf.train.Saver()
+
         # Fire up the TensorFlow-Session
         self.tensorflow_session = tf.Session( config=tf.ConfigProto(log_device_placement=True, allow_soft_placement=True) )
-        self.tensorflow_session.run( tf.initialize_all_variables() )
+
+
+        # Initi from scratch or load from model
+        if self.PARAM_MODEL_RESTORE == None:
+            #Start from scratch
+            print self.tcolor.OKGREEN,'initialize_all_variables() : xavier', self.tcolor.ENDC
+            self.tensorflow_session.run( tf.initialize_all_variables() )
+        else:
+            #Restore model
+            restore_file_name = self.PARAM_MODEL_RESTORE #'tf.models/model-5100'
+            print self.tcolor.OKGREEN,'restore model', restore_file_name, self.tcolor.ENDC
+            self.tensorflow_saver.restore( self.tensorflow_session, restore_file_name )
+
+
         tf.train.start_queue_runners(sess=self.tensorflow_session)
 
 
         # Holding variables
         self.tensorflow_iteration = 0
 
+
         # TensorBoard Writer
         self.tensorflow_summary_writer = tf.train.SummaryWriter( self.PARAM_TENSORBOARD_PREFIX, graph=tf.get_default_graph() )
         self.tensorflow_summary_op = tf.merge_all_summaries()
 
 
-        # Model Saver
-        self.tensorflow_saver = tf.train.Saver()
+
 
         # code.interact(local=locals())
 
@@ -576,26 +602,54 @@ class TrainRenderer(ShowBase):
 parser = argparse.ArgumentParser()
 parser.add_argument("-t", "--tensorboard_prefix", help="Path for tensorboard")
 parser.add_argument("-s", "--model_save_prefix", help="Path for saving model")
+parser.add_argument("-r", "--model_restore", help="Path of model file for restore. This file path is \
+                                split(-) and last number is set as iteration count. \
+                                Absense of this will lead to xavier init")
+
+parser.add_argument("-wsu", "--write_summary", help="Write summary after every N iteration (default:20)")
+parser.add_argument("-wmo", "--write_tf_model", help="Write tf model after every N iteration (default:1000)")
 args = parser.parse_args()
 
 tcolor = TerminalColors.bcolors()
 
+# Prefix path to for `SummaryWriter`
 if args.tensorboard_prefix:
 	tensorboard_prefix = args.tensorboard_prefix
 else:
     tensorboard_prefix = 'tf.logs/default'
 
 
+if args.write_summary:
+    write_summary = int(args.write_summary) #TODO: check this is not negative or zero
+else:
+    write_summary = 20
+
+# Prefix path for `Saver`
 if args.model_save_prefix:
 	model_save_prefix = args.model_save_prefix
 else:
     model_save_prefix = 'tf.models/model'
 
+if args.write_tf_model:
+    write_tf_model = int(args.write_tf_model) #TODO: check this is not negative or zero
+else:
+    write_tf_model = 5000
 
-print tcolor.HEADER, 'tensorboard_prefix : ', tensorboard_prefix, tcolor.ENDC
-print 'model_save_prefix   : ', model_save_prefix
+
+if args.model_restore:
+    model_restore = args.model_restore
+else:
+    model_restore = None
+
+
+print tcolor.HEADER, 'tensorboard_prefix     : ', tensorboard_prefix, tcolor.ENDC
+print tcolor.HEADER, 'write_summary every    : ', write_summary, 'iterations', tcolor.ENDC
+print tcolor.HEADER, 'model_save_prefix      : ', model_save_prefix, tcolor.ENDC
+print tcolor.HEADER, 'write_tf_model every   : ', write_tf_model, 'iterations', tcolor.ENDC
+
+print tcolor.HEADER, 'model_restore          : ', model_restore, tcolor.ENDC
 
 
 
-app = TrainRenderer(tensorboard_prefix, model_save_prefix)
+app = TrainRenderer(tensorboard_prefix, write_summary, model_save_prefix, write_tf_model, model_restore )
 app.run()

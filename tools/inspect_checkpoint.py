@@ -62,7 +62,7 @@ def print_tensors_in_checkpoint_file(file_name, tensor_name):
 
 def main(unused_argv):
   if not FLAGS.file_name:
-    print 'This script prints the variables in the checkpoint file\n'
+    print('This script prints the variables in the checkpoint file')
     print("Usage: inspect_checkpoint --file_name=checkpoint_file_name "
           "[--tensor_name=tensor_to_print]")
     sys.exit(1)
