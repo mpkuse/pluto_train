@@ -14,7 +14,8 @@ from direct.stdpy import thread
 # Usual Math and Image Processing
 import numpy as np
 import cv2
-import caffe
+# import caffe
+import tensorflow as tf
 from scipy import interpolate
 
 
@@ -24,12 +25,15 @@ import argparse
 import Queue
 import copy
 import time
+import code
 
 
 # Misc
 import TerminalColors
 import CubeMaker
 import PathMaker
+import PlutoFlow as puf
+
 
 
 class TestRenderer(ShowBase):
@@ -137,36 +141,31 @@ class TestRenderer(ShowBase):
         im_statSquash = self.zNormalized( im.astype('float32') )
 
 
-        # Set into caffe
-        #print self.caffeNet.blobs['data'].data.shape #1x3x240x320
-        self.caffeNet.blobs['data'].data[0,0:3,:,:] = im_statSquash.transpose(2,0,1)
-        self.caffeNet.blobs['label_x'].data[0,0] = y[0]
-        self.caffeNet.blobs['label_y'].data[0,0] = y[1]
-        self.caffeNet.blobs['label_z'].data[0,0] = y[2]
-        self.caffeNet.blobs['label_yaw'].data[0,0] = y[3]
+        # cv2.imwrite( 'tf.logs/'+str(TestRenderer.renderIndx)+'.png', im.astype('uint8') )
+
+        # tensorflow infer
+        im_batch = np.zeros((1,240,320,3))
+        im_batch[0,:,:,0] = self.zNormalized( im[:,:,0] )
+        im_batch[0,:,:,1] = self.zNormalized( im[:,:,1] )
+        im_batch[0,:,:,2] = self.zNormalized( im[:,:,2] )
 
 
-        # Forward Pass
-        output = self.caffeNet.forward()
-
-        # Retrive Losses
-
-        loss_x = self.caffeNet.blobs['loss_x'].data
-        loss_y = self.caffeNet.blobs['loss_y'].data
-        loss_z = self.caffeNet.blobs['loss_z'].data
-        loss_yaw = self.caffeNet.blobs['loss_yaw'].data
+        # session.run() for inference
+        aa_out = self.tensorflow_session.run( [self.tf_infer_op], feed_dict={ self.tf_x:im_batch } ) #1x4x12x1
+        aa_out = aa_out[0]
+        pr_x = aa_out[0][0][0]
+        pr_y = aa_out[1][0][0]
+        pr_z = aa_out[2][0][0]
+        pr_yaw = aa_out[3][0][0]
 
 
-        # Retrive Predictions
-        pred_x = self.caffeNet.blobs['ip3_x'].data[0,0]
-        pred_y = self.caffeNet.blobs['ip3_y'].data[0,0]
-        pred_z = self.caffeNet.blobs['ip3_z'].data[0,0]
-        pred_yaw = self.caffeNet.blobs['ip3_yaw'].data[0,0]
+        # code.interact(local=locals())
 
 
         GT = [ y[0], y[1], y[2], y[3] ]
-        PRED = [pred_x, pred_y, pred_z, pred_yaw]
-        LOSS = [loss_x, loss_y, loss_z, loss_yaw]
+        # PRED = [0,0,0,0]
+        PRED = [pr_x,pr_y,pr_z,pr_yaw]
+        LOSS = [0,0,0,0]
         print 'GT   : %2.4f %2.4f %2.4f %2.4f' %(GT[0], GT[1], GT[2], GT[3])
         print 'Pr   : %2.4f %2.4f %2.4f %2.4f' %(PRED[0], PRED[1], PRED[2], PRED[3])
         # print 'loss : ', LOSS
@@ -353,7 +352,7 @@ class TestRenderer(ShowBase):
     def __init__(self, tr_model, arch_proto):
         ShowBase.__init__(self)
         self.taskMgr.add( self.renderNtestTask, "renderNtestTask" ) #changing camera poses
-        self.taskMgr.add( self.putAxesTask, "putAxesTask" ) #draw co-ordinate axis
+        # self.taskMgr.add( self.putAxesTask, "putAxesTask" ) #draw co-ordinate axis
 
 
         # Misc Setup
@@ -435,19 +434,49 @@ class TestRenderer(ShowBase):
         self.q_labelStack = Queue.Queue()
 
 
-        # AAZ
-        # Set up Caffe (possibly in future TensorFLow)
-        caffe.set_mode_gpu()
-        caffe.set_device(1)
+        # Caffe
+        # Caffe init was here, now removed
 
-        caffe_net = arch_proto#'net_workshop/ResNet50_b_test.prototxt'
-        caffe_model = tr_model#'x_ResNet50_b6_fov83_gnoise10_iter_25000.caffemodel.h5'
+        # Setup TensorFLow
+        #TODO Get tensorflow model file info from command line (need to edit constructor)
+        puf_obj = puf.PlutoFlow(trainable_on_device='/gpu:0')
 
-        
-        self.caffeNet = caffe.Net(caffe_net, caffe_model, caffe.TEST)
-        print tcolor.HEADER, 'tr_model : ', tr_model, tcolor.ENDC
-        print tcolor.HEADER, 'arch_proto   : ', arch_proto, tcolor.ENDC
-        print tcolor.OKGREEN, 'Model Loading Success..!', tcolor.ENDC
+
+        # Setup placeholders (need just 1 placeholder, ie. input image)
+        #TODO Try `1` instead of `None`
+        self.tf_x = tf.placeholder( 'float', [None,240,320,3], name='x' )
+
+
+        # Set the ResNet inference_op
+        with tf.device( '/gpu:0'):
+            self.tf_infer_op = puf_obj.resnet50_inference(self.tf_x, is_training=False)
+
+
+        # Print all Trainable Variables
+        var_list = tf.trainable_variables()
+        print '--Trainable Variables--', 'length= ', len(var_list)
+        total_n_nums = []
+        for vr in var_list:
+            shape = vr.get_shape().as_list()
+            n_nums = np.prod(shape)
+            total_n_nums.append( n_nums )
+            print self.tcolor.OKGREEN, vr.name, shape, n_nums, self.tcolor.ENDC
+
+        print self.tcolor.OKGREEN, 'Total Trainable Params (floats): ', sum( total_n_nums )
+        print 'Not counting the pop_mean and pop_varn as these were set to be non trainable', self.tcolor.ENDC
+
+
+        # Fire up the TensorFlow-Session
+        self.tensorflow_session = tf.Session( config=tf.ConfigProto(log_device_placement=True, allow_soft_placement=True) )
+
+
+        # Load trainables' values from file
+        self.tensorflow_saver = tf.train.Saver()
+        restore_file_name = 'tf.models/model-165000'
+        print 'Loading Model File : ', restore_file_name
+        self.tensorflow_saver.restore( self.tensorflow_session, restore_file_name )
+        print self.tcolor.OKGREEN, 'Loaded file : ', restore_file_name, self.tcolor.ENDC
+
 
 
         # store loss at each frame in the trajectory

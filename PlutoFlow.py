@@ -114,7 +114,7 @@ class PlutoFlow:
 
 
 
-    def resnet50_inference(self, x):
+    def resnet50_inference(self, x, is_training):
         """ This function creates the computational graph and returns the op which give a
             prediction given an input batch x
         """
@@ -136,7 +136,7 @@ class PlutoFlow:
 
 
 
-            conv1 = self._conv2d( x, wc_top, bc_top, pop_mean=wc_top_pop_mean, pop_varn=wc_top_pop_varn, is_training=True, W_beta=wc_top_beta, W_gamma=wc_top_gamma, strides=2 )
+            conv1 = self._conv2d( x, wc_top, bc_top, pop_mean=wc_top_pop_mean, pop_varn=wc_top_pop_varn, is_training=is_training, W_beta=wc_top_beta, W_gamma=wc_top_gamma, strides=2 )
             conv1 = self._maxpool2d( conv1, k=2 )
             tf.histogram_summary( 'conv1', conv1 )
 
@@ -144,13 +144,13 @@ class PlutoFlow:
 
             ## RES2
             with tf.variable_scope( 'res2a', reuse=True ):
-                conv_out = self.resnet_unit( input_var, 64, [64,64,256], [1,3,1], short_circuit=False )
+                conv_out = self.resnet_unit( input_var, 64, [64,64,256], [1,3,1], is_training=is_training, short_circuit=False )
 
             with tf.variable_scope( 'res2b', reuse=True ):
-                conv_out = self.resnet_unit( conv_out, 256, [64,64,256], [1,3,1], short_circuit=True )
+                conv_out = self.resnet_unit( conv_out, 256, [64,64,256], [1,3,1], is_training=is_training, short_circuit=True )
 
             with tf.variable_scope( 'res2c', reuse=True ):
-                conv_out = self.resnet_unit( conv_out, 256, [64,64,256], [1,3,1], short_circuit=True )
+                conv_out = self.resnet_unit( conv_out, 256, [64,64,256], [1,3,1], is_training=is_training, short_circuit=True )
 
                 ## MAXPOOL
                 conv_out = self._maxpool2d( conv_out, k=2 )
@@ -158,16 +158,16 @@ class PlutoFlow:
 
             ## RES3
             with tf.variable_scope( 'res3a', reuse=True ):
-                conv_out = self.resnet_unit( conv_out, 256, [128,128,512], [1,3,1], short_circuit=False )
+                conv_out = self.resnet_unit( conv_out, 256, [128,128,512], [1,3,1], is_training=is_training, short_circuit=False )
 
             with tf.variable_scope( 'res3b', reuse=True ):
-                conv_out = self.resnet_unit( conv_out, 512, [128,128,512], [1,3,1], short_circuit=True )
+                conv_out = self.resnet_unit( conv_out, 512, [128,128,512], [1,3,1], is_training=is_training, short_circuit=True )
 
             with tf.variable_scope( 'res3c', reuse=True ):
-                conv_out = self.resnet_unit( conv_out, 512, [128,128,512], [1,3,1], short_circuit=True )
+                conv_out = self.resnet_unit( conv_out, 512, [128,128,512], [1,3,1], is_training=is_training, short_circuit=True )
 
             with tf.variable_scope( 'res3d', reuse=True ):
-                conv_out = self.resnet_unit( conv_out, 512, [128,128,512], [1,3,1], short_circuit=True )
+                conv_out = self.resnet_unit( conv_out, 512, [128,128,512], [1,3,1], is_training=is_training, short_circuit=True )
 
                 ## MAXPOOL
                 conv_out = self._maxpool2d( conv_out, k=2 )
@@ -175,19 +175,19 @@ class PlutoFlow:
 
             ## RES4
             with tf.variable_scope( 'res4a', reuse=True ):
-                conv_out = self.resnet_unit( conv_out, 512, [256,256,1024], [1,3,1], short_circuit=False )
+                conv_out = self.resnet_unit( conv_out, 512, [256,256,1024], [1,3,1], is_training=is_training, short_circuit=False )
 
             with tf.variable_scope( 'res4b', reuse=True ):
-                conv_out = self.resnet_unit( conv_out, 1024, [256,256,1024], [1,3,1], short_circuit=True )
+                conv_out = self.resnet_unit( conv_out, 1024, [256,256,1024], [1,3,1], is_training=is_training, short_circuit=True )
 
             with tf.variable_scope( 'res4c', reuse=True ):
-                conv_out = self.resnet_unit( conv_out, 1024, [256,256,1024], [1,3,1], short_circuit=True )
+                conv_out = self.resnet_unit( conv_out, 1024, [256,256,1024], [1,3,1], is_training=is_training, short_circuit=True )
 
             with tf.variable_scope( 'res4d', reuse=True ):
-                conv_out = self.resnet_unit( conv_out, 1024, [256,256,1024], [1,3,1], short_circuit=True )
+                conv_out = self.resnet_unit( conv_out, 1024, [256,256,1024], [1,3,1], is_training=is_training, short_circuit=True )
 
             with tf.variable_scope( 'res4e', reuse=True ):
-                conv_out = self.resnet_unit( conv_out, 1024, [256,256,1024], [1,3,1], short_circuit=True )
+                conv_out = self.resnet_unit( conv_out, 1024, [256,256,1024], [1,3,1], is_training=is_training, short_circuit=True )
 
                 ## MAXPOOL
                 conv_out = self._maxpool2d( conv_out, k=2 )
@@ -195,13 +195,13 @@ class PlutoFlow:
 
             ## RES5
             with tf.variable_scope( 'res5a', reuse=True ):
-                conv_out = self.resnet_unit( conv_out, 1024, [512,512,2048], [1,3,1], short_circuit=False )
+                conv_out = self.resnet_unit( conv_out, 1024, [512,512,2048], [1,3,1], is_training=is_training, short_circuit=False )
 
             with tf.variable_scope( 'res5b', reuse=True ):
-                conv_out = self.resnet_unit( conv_out, 2048, [512,512,2048], [1,3,1], short_circuit=True )
+                conv_out = self.resnet_unit( conv_out, 2048, [512,512,2048], [1,3,1], is_training=is_training, short_circuit=True )
 
             with tf.variable_scope( 'res5c', reuse=True ):
-                conv_out = self.resnet_unit( conv_out, 2048, [512,512,2048], [1,3,1], short_circuit=True )
+                conv_out = self.resnet_unit( conv_out, 2048, [512,512,2048], [1,3,1], is_training=is_training, short_circuit=True )
 
                 ## MAXPOOL
                 conv_out = self._avgpool2d( conv_out, k1=8, k2=10 )
@@ -235,7 +235,7 @@ class PlutoFlow:
         print self.tcol.WARNING, display_str, T.name, T.get_shape().as_list(), self.tcol.ENDC
 
 
-    def resnet_unit( self, input_tensor, n_inputs, n_intermediates, intermediate_filter_size, short_circuit=True ):
+    def resnet_unit( self, input_tensor, n_inputs, n_intermediates, intermediate_filter_size, is_training, short_circuit=True ):
         """ Defines the net structure of resnet unit
                 input_tensor : Input of the unit
                 n_inputs : Number of input channels
@@ -281,9 +281,9 @@ class PlutoFlow:
         self._print_tensor_info( 'Request Var', wc3 )
 
 
-        conv_1 = self._conv2d_nobias( input_tensor, wc1, pop_mean=wc1_bn_pop_mean, pop_varn=wc1_bn_pop_varn, is_training=True, W_beta=wc1_bn_beta, W_gamma=wc1_bn_gamma )
-        conv_2 = self._conv2d_nobias( conv_1, wc2,  pop_mean=wc2_bn_pop_mean, pop_varn=wc2_bn_pop_varn, is_training=True, W_beta=wc2_bn_beta, W_gamma=wc2_bn_gamma )
-        conv_3 = self._conv2d_nobias( conv_2, wc3, pop_mean=wc3_bn_pop_mean, pop_varn=wc3_bn_pop_varn, is_training=True,  W_beta=wc3_bn_beta, W_gamma=wc3_bn_gamma, relu_unit=False )
+        conv_1 = self._conv2d_nobias( input_tensor, wc1, pop_mean=wc1_bn_pop_mean, pop_varn=wc1_bn_pop_varn, is_training=is_training, W_beta=wc1_bn_beta, W_gamma=wc1_bn_gamma )
+        conv_2 = self._conv2d_nobias( conv_1, wc2,  pop_mean=wc2_bn_pop_mean, pop_varn=wc2_bn_pop_varn, is_training=is_training, W_beta=wc2_bn_beta, W_gamma=wc2_bn_gamma )
+        conv_3 = self._conv2d_nobias( conv_2, wc3, pop_mean=wc3_bn_pop_mean, pop_varn=wc3_bn_pop_varn, is_training=is_training,  W_beta=wc3_bn_beta, W_gamma=wc3_bn_gamma, relu_unit=False )
         self._print_tensor_info( 'conv_1', conv_1 )
         self._print_tensor_info( 'conv_2', conv_2 )
         self._print_tensor_info( 'conv_3', conv_3 )
@@ -299,7 +299,7 @@ class PlutoFlow:
                 wc_side_bn_pop_varn = tf.get_variable( 'wc_side_pop_varn', [b[2]] )
 
             self._print_tensor_info( 'Request Var', wc_side )
-            conv_side = self._conv2d_nobias( input_tensor, wc_side, pop_mean=wc_side_bn_pop_mean, pop_varn=wc_side_bn_pop_varn, is_training=True, W_beta=wc_side_bn_beta, W_gamma=wc_side_bn_gamma, relu_unit=False )
+            conv_side = self._conv2d_nobias( input_tensor, wc_side, pop_mean=wc_side_bn_pop_mean, pop_varn=wc_side_bn_pop_varn, is_training=is_training, W_beta=wc_side_bn_beta, W_gamma=wc_side_bn_gamma, relu_unit=False )
             conv_out = tf.nn.relu( tf.add( conv_3, conv_side ) )
 
         self._print_tensor_info( 'conv_out', conv_out )

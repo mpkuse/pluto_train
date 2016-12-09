@@ -17,9 +17,10 @@ from direct.stdpy import thread
 # Usual Math and Image Processing
 import numpy as np
 import cv2
+import matplotlib.pyplot as plt
 # import caffe
 import tensorflow as tf
-import PlutoFlow as puf
+
 
 
 # Other System Libs
@@ -31,12 +32,12 @@ import time
 import code
 
 
-# Misc
+# Custom-Misc
 import TerminalColors
 import CubeMaker
 import censusTransform as ct
 import Noise
-
+import PlutoFlow as puf
 
 class TrainRenderer(ShowBase):
     renderIndx=0
@@ -194,9 +195,70 @@ class TrainRenderer(ShowBase):
             print 'snapshot model()', save_path
 
 
+        # Try testing every 100 iterations
+        # if self.tensorflow_iteration % 100 == 0 and self.tensorflow_iteration > 0:
+            # self.do_test_evaluation(100)
+
+
+
 
 
         self.tensorflow_iteration = self.tensorflow_iteration + 1
+
+    def do_test_evaluation( self, batchsize=100 ):
+        """ Does inference using self.tf_infer_op. Note that this function will do dequeue.
+        Warning: This might cause a race condition if too many are extracted from the queue
+        """
+
+        # Make a batch - Dequeue and batch (similar to training)
+        im_batch = np.zeros((batchsize,240,320,3))
+        label_batch = np.zeros((batchsize,4))
+        # print 'batchsize', batchsize
+        # print "self.solver.net.blobs['data'].data", self.solver.net.blobs['data'].data.shape
+        # print "self.solver.net.blobs['label_x'].data",self.solver.net.blobs['label_x'].data.shape
+        for i in range(batchsize):
+            im = self.q_imStack.get() #240x320x3 RGB
+            y = self.q_labelStack.get()
+
+
+            im_batch[i,:,:,0] = self.zNormalized( im[:,:,0] )
+            im_batch[i,:,:,1] = self.zNormalized( im[:,:,1] )
+            im_batch[i,:,:,2] = self.zNormalized( im[:,:,2] )
+            label_batch[i,0] = y[0]
+            label_batch[i,1] = y[1]
+            label_batch[i,2] = y[2]
+            label_batch[i,3] = y[3]
+
+        # session.run() for inference
+        aa_out = self.tensorflow_session.run( [self.tf_infer_op], feed_dict={ self.tf_x:im_batch } ) #1x4x12x1
+        aa_out = aa_out[0]
+
+
+        # Print side by side
+        f, axarr = plt.subplots(2, 2)
+        axarr[0, 0].plot( aa_out[0], 'r' )
+        axarr[0, 0].plot( label_batch[:,0], 'b' )
+        axarr[0, 0].set_title('X')
+
+        axarr[0, 1].plot( aa_out[1], 'r' )
+        axarr[0, 1].set_title('Y')
+
+        axarr[1, 0].plot( aa_out[2], 'r' )
+        axarr[0, 1].plot( label_batch[:,1], 'b' )
+        axarr[1, 0].plot( label_batch[:,2], 'b' )
+        axarr[1, 0].set_title('Z')
+
+        axarr[1, 1].plot( aa_out[3], 'r' )
+        axarr[1, 1].plot( label_batch[:,3], 'b' )
+        axarr[1, 1].set_title('Yaw')
+
+
+        plt.savefig('tf.logs/foo'+str(self.tensorflow_iteration)+'.png')
+        # plt.show()
+
+
+        # code.interact(local=locals())
+
 
 
 
@@ -208,8 +270,12 @@ class TrainRenderer(ShowBase):
             return base_lr/2.
         elif n_iteration >= 300 and n_iteration < 500:
             return base_lr/4
+        elif n_iteration >= 500 and n_iteration < 1000:
+            return base_lr/8
+        elif n_iteration >= 1000 and n_iteration < 2000:
+            return base_lr/16
         else:
-            return base_lr/10
+            return base_lr/40
 
 
     def monte_carlo_sample(self):
@@ -522,7 +588,7 @@ class TrainRenderer(ShowBase):
 
         # Define Deep Residual Nets
         with tf.device( '/gpu:0'):
-            infer_op = puf_obj.resnet50_inference(self.tf_x)  #TODO: Define these inference ops on all the GPUs
+            self.tf_infer_op = puf_obj.resnet50_inference(self.tf_x, is_training=True)  #TODO: Define these inference ops on all the GPUs
 
 
         # Cost function, SGD, Gradient computer
@@ -532,7 +598,7 @@ class TrainRenderer(ShowBase):
 
         with tf.device( '/gpu:0' ):
             with tf.variable_scope( 'loss'):
-                self.tensorflow_cost = self.define_l2_loss( infer_op, self.tf_label_x, self.tf_label_y, self.tf_label_z, self.tf_label_yaw )
+                self.tensorflow_cost = self.define_l2_loss( self.tf_infer_op, self.tf_label_x, self.tf_label_y, self.tf_label_z, self.tf_label_yaw )
             self.tensorflow_grad_compute = self.tensorflow_optimizer.compute_gradients( self.tensorflow_cost )
 
         #TODO ideally have the averaged gradients from all GPUS here as arg for apply_grad()
