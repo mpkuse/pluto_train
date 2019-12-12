@@ -9,7 +9,7 @@ Remake of the original `mc_train`. More organized code and trying to run on the 
 
 
 Manohar Kuse, Sunil Prasad Jaiswal, Shaojie Shen, **Deep-mapnets: A Residual Network for 3D Environment Representation **
-2017 IEEE International Conference on Image Processing (ICIP 2017), Beijing, China, 17-20 September 2017 
+2017 IEEE International Conference on Image Processing (ICIP 2017), Beijing, China, 17-20 September 2017
 
 
 ## Prerequistite Packages
@@ -17,3 +17,10 @@ Manohar Kuse, Sunil Prasad Jaiswal, Shaojie Shen, **Deep-mapnets: A Residual Net
 - Panda3d
 - OpenCV
 - Numpy
+
+## Rendering from 3D model
+The 3D model depected below is available for download from here (25GB). It is a model of HKUST, Hong Kong (GPS-lat:22.335162 GPS-long:114.263035)
+
+![aaa](images/sc_6_afterscale.png)
+
+![aaa](images/rviz.png)
