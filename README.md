@@ -19,7 +19,10 @@ Manohar Kuse, Sunil Prasad Jaiswal, Shaojie Shen, **Deep-mapnets: A Residual Net
 - Numpy
 
 ## Rendering from 3D model
-The 3D model depected below is available for download from here (25GB). It is a model of HKUST, Hong Kong (GPS-lat:22.335162 GPS-long:114.263035)
+The 3D model depected below is available for download from [here](https://hkustconnect-my.sharepoint.com/:u:/g/personal/mpkuse_connect_ust_hk/EaC-iCvxQ35PvDjuzduiaoYBrKP6VRFEQm5as90rlEJY2A?e=EYDyDe) (4.2 GB).
+It is a model of HKUST, Hong Kong (GPS-lat:22.335162 GPS-long:114.263035)
+
+If you use our model for training, do site us. The model was created with Altizure.
 
 ![aaa](images/sc_6_afterscale.png)
 
